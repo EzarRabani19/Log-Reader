@@ -4,7 +4,6 @@ import pandas as pd
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.path import Path
 from streamlit_drawable_canvas import st_canvas
 import io
 
@@ -14,7 +13,7 @@ st.title("🪨 Detailed Stratigraphic Column & Lithology Log Digitizer")
 st.markdown(
     "Digitalisasi gambar log stratigrafi menjadi **Kolom Stratigrafi Multi-Track Detail** "
     "(Skala Kedalaman, Litologi & Profil Ukuran Butir Wentworth, Simbol Struktur Sedimen/Fosil, "
-    "Kurva Tren Sikuen FU/CU, dan Lingkungan Pengendapan) serta ekspor ke **PNG/PDF, CSV, dan LAS 2.0**."
+    "Kurva Tren Sikuen FU/CU, dan Lingkungan Pengendapan) serta ekspor ke **PNG 300 DPI, CSV, dan LAS 2.0**."
 )
 
 # --- STANDAR LITOLOGI & SKALA WENTWORTH ---
@@ -48,6 +47,7 @@ SED_STRUCTURES = [
 
 CONTACT_TYPES = ["Tajam (Sharp)", "Erosional (Scoured)", "Gradasi (Gradational)"]
 
+
 # --- FUNGSI GAMBAR IKON STRUKTUR SEDIMEN & FOSIL ---
 def draw_sedimentary_symbol(ax, x_center, y_center, structure_name):
     if "Parallel" in structure_name:
@@ -64,14 +64,20 @@ def draw_sedimentary_symbol(ax, x_center, y_center, structure_name):
         y_w = y_center + 0.08 * np.sin((x_w - x_center) * 22)
         ax.plot(x_w, y_w, color="black", lw=1.1)
     elif "Graded" in structure_name:
-        ax.scatter([x_center - 0.15, x_center, x_center + 0.15], [y_center - 0.12]*3, s=16, color="black")
-        ax.scatter([x_center - 0.1, x_center + 0.1], [y_center]*2, s=7, color="black")
-        ax.scatter([x_center - 0.12, x_center, x_center + 0.12], [y_center + 0.12]*3, s=2, color="black")
+        ax.scatter([x_center - 0.15, x_center, x_center + 0.15], [y_center - 0.12] * 3, s=16, color="black")
+        ax.scatter([x_center - 0.1, x_center + 0.1], [y_center] * 2, s=7, color="black")
+        ax.scatter([x_center - 0.12, x_center, x_center + 0.12], [y_center + 0.12] * 3, s=2, color="black")
     elif "Bioturbasi" in structure_name:
-        ax.plot([x_center - 0.1, x_center - 0.1, x_center + 0.1, x_center + 0.1],
-                [y_center + 0.15, y_center - 0.15, y_center - 0.15, y_center + 0.15], color="#6E2C00", lw=1.3)
+        ax.plot(
+            [x_center - 0.1, x_center - 0.1, x_center + 0.1, x_center + 0.1],
+            [y_center + 0.15, y_center - 0.15, y_center - 0.15, y_center + 0.15],
+            color="#6E2C00",
+            lw=1.3,
+        )
     elif "Fosil" in structure_name:
-        arc = patches.Arc((x_center, y_center - 0.05), 0.32, 0.28, angle=0, theta1=0, theta2=180, color="#154360", lw=1.3)
+        arc = patches.Arc(
+            (x_center, y_center - 0.05), 0.32, 0.28, angle=0, theta1=0, theta2=180, color="#154360", lw=1.3
+        )
         ax.add_patch(arc)
         ax.plot([x_center - 0.16, x_center + 0.16], [y_center - 0.05, y_center - 0.05], color="#154360", lw=1.1)
     elif "Tumbuhan" in structure_name:
@@ -82,11 +88,12 @@ def draw_sedimentary_symbol(ax, x_center, y_center, structure_name):
         ell = patches.Ellipse((x_center, y_center), 0.34, 0.18, facecolor="#5D6D7E", edgecolor="black", lw=1.0)
         ax.add_patch(ell)
 
+
 # --- SIDEBAR: UPLOAD & KALIBRASI ---
 with st.sidebar:
     st.header("1. Informasi Header Log")
-    well_or_section_name = st.text_input("Nama Sumur / Lintasan Singkapan", value="Lintasan Sungai Citarum - MS 01")
-    location_info = st.text_input("Lokasi / Formasi", value="Formasi Jatiluhur / Cekungan Jawa Barat Utara")
+    well_or_section_name = st.text_input("Nama Sumur / Lintasan Singkapan", value="Lintasan MS-01")
+    location_info = st.text_input("Lokasi / Formasi", value="Formasi Jatiluhur")
 
     st.header("2. Upload Gambar Log Stratigrafi")
     uploaded_file = st.file_uploader("Pilih gambar log stratigrafi (PNG/JPG)", type=["png", "jpg", "jpeg"])
@@ -94,14 +101,17 @@ with st.sidebar:
     st.header("3. Kalibrasi Sumbu Vertikal")
     depth_mode = st.radio(
         "Arah Pengukuran Vertikal:",
-        ["Ketebalan Singkapan / Measured Section (0 -> Top)", "Kedalaman Bawah Permukaan (Top -> Bottom)"]
+        ["Ketebalan Singkapan / Measured Section (0 -> Top)", "Kedalaman Bawah Permukaan (Top -> Bottom)"],
     )
-    val_top = st.number_input("Nilai Vertikal Paling Atas (m)", value=25.0 if "Measured" in depth_mode else 1000.0, format="%.2f")
-    val_bot = st.number_input("Nilai Vertikal Paling Bawah (m)", value=0.0 if "Measured" in depth_mode else 1025.0, format="%.2f")
+    default_top = 25.0 if "Measured" in depth_mode else 1000.0
+    default_bot = 0.0 if "Measured" in depth_mode else 1025.0
+    val_top = st.number_input("Nilai Vertikal Paling Atas (m)", value=default_top, format="%.2f")
+    val_bot = st.number_input("Nilai Vertikal Paling Bawah (m)", value=default_bot, format="%.2f")
 
     st.header("4. Pengaturan Deteksi Otomatis")
     color_tol = st.slider("Toleransi Kemiripan Warna Lapisan", 10, 120, 45)
     min_bed_px = st.slider("Ketebalan Minimum Lapisan (piksel)", 2, 30, 5)
+
 
 # --- MAIN AREA ---
 if uploaded_file is not None:
@@ -169,7 +179,7 @@ if uploaded_file is not None:
                 if (roi_h - bed_start_px) >= min_bed_px:
                     raw_segments.append((bed_start_px, roi_h, row_colors[bed_start_px:roi_h].mean(axis=0)))
 
-                for idx, (seg_top, seg_bot, avg_rgb) in enumerate(raw_segments):
+                for seg_top, seg_bot, avg_rgb in raw_segments:
                     top_m = val_top + (seg_top / roi_h) * (val_bot - val_top)
                     bot_m = val_top + (seg_bot / roi_h) * (val_bot - val_top)
 
@@ -185,18 +195,19 @@ if uploaded_file is not None:
                     else:
                         guessed_lith = "Batulempung (Claystone / Shale)"
 
-                    detected_beds.append({
-                        "Top (m)": round(top_m, 2),
-                        "Bottom (m)": round(bot_m, 2),
-                        "Formasi / Satuan": "Satuan A",
-                        "Litologi": guessed_lith,
-                        "Kontak Bawah": "Tajam (Sharp)",
-                        "Struktur & Fosil": "Tidak ada (-)",
-                        "Lingkungan & Deskripsi": "Endapan klastik"
-                    })
+                    detected_beds.append(
+                        {
+                            "Top (m)": round(top_m, 2),
+                            "Bottom (m)": round(bot_m, 2),
+                            "Formasi / Satuan": "Satuan A",
+                            "Litologi": guessed_lith,
+                            "Kontak Bawah": "Tajam (Sharp)",
+                            "Struktur & Fosil": "Tidak ada (-)",
+                            "Lingkungan & Deskripsi": "Endapan klastik",
+                        }
+                    )
 
         if not detected_beds:
-            # Template realistis sikuen delta/fluvial jika user belum menggambar kotak
             span = val_bot - val_top
             detected_beds = [
                 {
@@ -206,7 +217,7 @@ if uploaded_file is not None:
                     "Litologi": "Batulempung (Claystone / Shale)",
                     "Kontak Bawah": "Gradasi (Gradational)",
                     "Struktur & Fosil": "Sisa Tumbuhan / Rootlets",
-                    "Lingkungan & Deskripsi": "Floodplain / Marsh: lempung abu-abu gelap karbonan"
+                    "Lingkungan & Deskripsi": "Floodplain / Marsh: lempung abu-abu gelap karbonan",
                 },
                 {
                     "Top (m)": round(val_top + span * 0.25, 2),
@@ -215,7 +226,7 @@ if uploaded_file is not None:
                     "Litologi": "Batupasir Halus (Fine Sandstone)",
                     "Kontak Bawah": "Gradasi (Gradational)",
                     "Struktur & Fosil": "Ripple Marks (Gelembur Gelombang)",
-                    "Lingkungan & Deskripsi": "Point Bar (Upper): pasir halus kuarsa, sortasi baik"
+                    "Lingkungan & Deskripsi": "Point Bar (Upper): pasir halus kuarsa, sortasi baik",
                 },
                 {
                     "Top (m)": round(val_top + span * 0.50, 2),
@@ -224,7 +235,7 @@ if uploaded_file is not None:
                     "Litologi": "Batupasir Kasar (Coarse Sandstone)",
                     "Kontak Bawah": "Erosional (Scoured)",
                     "Struktur & Fosil": "Cross-Bedding (Silang Siur)",
-                    "Lingkungan & Deskripsi": "Fluvial Channel: pasir kasar kecokelatan, trough cross-bed"
+                    "Lingkungan & Deskripsi": "Fluvial Channel: pasir kasar kecokelatan, trough cross-bed",
                 },
                 {
                     "Top (m)": round(val_top + span * 0.80, 2),
@@ -233,7 +244,7 @@ if uploaded_file is not None:
                     "Litologi": "Batugamping Klastik / Kalkarenit",
                     "Kontak Bawah": "Tajam (Sharp)",
                     "Struktur & Fosil": "Fosil Cangkang / Foraminifera",
-                    "Lingkungan & Deskripsi": "Shallow Marine: kalkarenit bioklastik"
+                    "Lingkungan & Deskripsi": "Shallow Marine: kalkarenit bioklastik",
                 },
             ]
 
@@ -274,14 +285,12 @@ if uploaded_file is not None:
         edited_df["Ketebalan (m)"] = (edited_df["Bottom (m)"] - edited_df["Top (m)"]).abs().round(2)
         edited_df["Kode_Litologi"] = edited_df["Litologi"].map(lambda x: LITHOLOGY_STANDARDS[x]["code"])
 
-        # Urutkan dari elevasi atas ke bawah untuk rendering yang konsisten
         is_subsurface = "Top -> Bottom" in depth_mode
         df_plot = edited_df.sort_values("Top (m)", ascending=is_subsurface).reset_index(drop=True)
 
         y_min_plot = min(df_plot["Top (m)"].min(), df_plot["Bottom (m)"].min())
         y_max_plot = max(df_plot["Top (m)"].max(), df_plot["Bottom (m)"].max())
 
-        # Buat Figure Multi-Track dengan GridSpec
         fig = plt.figure(figsize=(13, 10), dpi=150)
         gs = fig.add_gridspec(1, 4, width_ratios=[0.9, 2.3, 1.1, 2.7], wspace=0.06)
 
@@ -290,10 +299,11 @@ if uploaded_file is not None:
         ax_struct = fig.add_subplot(gs[2], sharey=ax_fm)
         ax_desc = fig.add_subplot(gs[3], sharey=ax_fm)
 
-        # Judul Utama Header Log
         fig.suptitle(
             f"KOLOM STRATIGRAFI TERUKUR: {well_or_section_name.upper()}\n{location_info}",
-            fontsize=13, fontweight="bold", y=0.97
+            fontsize=13,
+            fontweight="bold",
+            y=0.97,
         )
 
         # --- TRACK 1: FORMASI & SKALA VERTIKAL ---
@@ -302,7 +312,6 @@ if uploaded_file is not None:
         ax_fm.set_title("Formasi &\nSkala (m)", fontsize=9.5, fontweight="bold", pad=10)
         ax_fm.set_ylabel("Kedalaman (m)" if is_subsurface else "Ketebalan Kumulatif (m)", fontweight="bold", fontsize=10)
 
-        # Gabungkan blok formasi yang berurutan
         fm_groups = []
         for _, r in df_plot.iterrows():
             fm_name = str(r["Formasi / Satuan"]).strip()
@@ -316,37 +325,41 @@ if uploaded_file is not None:
             y_lo, y_hi = min(grp["y1"], grp["y2"]), max(grp["y1"], grp["y2"])
             rect_fm = patches.Rectangle((0, y_lo), 1, y_hi - y_lo, facecolor="#F8F9F9", edgecolor="black", lw=1.0)
             ax_fm.add_patch(rect_fm)
-            ax_fm.text(0.5, (y_lo + y_hi) / 2, grp["fm"], ha="center", va="center", rotation=90, fontsize=8.5, fontweight="bold")
+            ax_fm.text(
+                0.5, (y_lo + y_hi) / 2, grp["fm"], ha="center", va="center", rotation=90, fontsize=8.5, fontweight="bold"
+            )
 
         # --- TRACK 2: KOLOM LITOLOGI, PROFIL UKURAN BUTIR & KURVA TREN ---
         ax_lith.set_xlim(0, 1.15)
         ax_lith.set_xticks([0.20, 0.32, 0.44, 0.56, 0.68, 0.80, 0.90, 1.00])
         ax_lith.set_xticklabels(["Cl", "Si", "vf", "f", "m", "c", "vc", "Cgl"], fontsize=8, fontweight="bold")
-        ax_lith.set_title("Litologi & Profil Ukuran Butir\n(Skala Wentworth + Tren Sikuen)", fontsize=9.5, fontweight="bold", pad=10)
+        ax_lith.set_title(
+            "Litologi & Profil Ukuran Butir\n(Skala Wentworth + Tren Sikuen)", fontsize=9.5, fontweight="bold", pad=10
+        )
         ax_lith.grid(axis="x", linestyle=":", color="#BDC3C7", alpha=0.8)
         plt.setp(ax_lith.get_yticklabels(), visible=False)
 
         trend_x, trend_y = [], []
 
-        for idx, row in df_plot.iterrows():
+        for _, row in df_plot.iterrows():
             y_t, y_b = row["Top (m)"], row["Bottom (m)"]
             y_lo, y_hi = min(y_t, y_b), max(y_t, y_b)
             h_bed = y_hi - y_lo
             lith_info = LITHOLOGY_STANDARDS[row["Litologi"]]
             w_grain = lith_info["grain_width"]
 
-            # Poligon utama lapisan
             rect_bed = patches.Rectangle(
-                (0, y_lo), w_grain, h_bed,
+                (0, y_lo),
+                w_grain,
+                h_bed,
                 facecolor=lith_info["color"],
                 edgecolor="black",
                 linewidth=0.9,
                 hatch=lith_info["hatch"],
-                zorder=2
+                zorder=2,
             )
             ax_lith.add_patch(rect_bed)
 
-            # Gambar variasi garis kontak bawah lapisan (Sharp, Erosional/Bergelombang, atau Gradational/Putus-putus)
             contact = row["Kontak Bawah"]
             if "Erosional" in contact:
                 xw_c = np.linspace(0, w_grain, 35)
@@ -355,15 +368,14 @@ if uploaded_file is not None:
             elif "Gradasi" in contact:
                 ax_lith.plot([0, w_grain], [y_b, y_b], color="black", lw=1.1, linestyle="--", zorder=4)
 
-            # Titik tengah lapisan untuk kurva tren ukuran butir
             trend_x.append(w_grain)
             trend_y.append((y_lo + y_hi) / 2.0)
 
-        # Plot Kurva Tren Ukuran Butir & Label FU / CU
         if len(trend_x) >= 2:
-            ax_lith.plot(trend_x, trend_y, color="#C0392B", linewidth=1.8, marker="o", markersize=4, zorder=5, label="Tren Butir")
+            ax_lith.plot(
+                trend_x, trend_y, color="#C0392B", linewidth=1.8, marker="o", markersize=4, zorder=5, label="Tren Butir"
+            )
             for i in range(len(trend_x) - 1):
-                # Bandingkan lapisan bawah (i+1) ke lapisan atas (i) dalam urutan vertikal dari atas ke bawah
                 w_upper, w_lower = trend_x[i], trend_x[i + 1]
                 y_mid_pair = (trend_y[i] + trend_y[i + 1]) / 2.0
                 if w_upper < w_lower - 0.05:
@@ -379,7 +391,9 @@ if uploaded_file is not None:
 
         for _, row in df_plot.iterrows():
             y_lo, y_hi = min(row["Top (m)"], row["Bottom (m)"]), max(row["Top (m)"], row["Bottom (m)"])
-            ax_struct.add_patch(patches.Rectangle((0, y_lo), 1, y_hi - y_lo, facecolor="white", edgecolor="#D5D8DC", lw=0.7))
+            ax_struct.add_patch(
+                patches.Rectangle((0, y_lo), 1, y_hi - y_lo, facecolor="white", edgecolor="#D5D8DC", lw=0.7)
+            )
             draw_sedimentary_symbol(ax_struct, 0.5, (y_lo + y_hi) / 2.0, row["Struktur & Fosil"])
 
         # --- TRACK 4: DESKRIPSI LITOLOGI & LINGKUNGAN PENGENDAPAN ---
@@ -395,21 +409,20 @@ if uploaded_file is not None:
             desc_text = f"[{short_lith} | {row['Ketebalan (m)']}m] {row['Lingkungan & Deskripsi']}"
             ax_desc.text(0.03, (y_lo + y_hi) / 2.0, desc_text, va="center", ha="left", fontsize=8, wrap=True)
 
-        # Atur orientasi sumbu Y global
         if is_subsurface:
             ax_fm.set_ylim(y_max_plot, y_min_plot)
         else:
             ax_fm.set_ylim(y_min_plot, y_max_plot)
 
-        # Legenda Litologi yang digunakan di bawah figure
         used_liths = df_plot["Litologi"].unique()
         legend_handles = [
             patches.Patch(
                 facecolor=LITHOLOGY_STANDARDS[l]["color"],
                 edgecolor="black",
                 hatch=LITHOLOGY_STANDARDS[l]["hatch"],
-                label=l
-            ) for l in used_liths
+                label=l,
+            )
+            for l in used_liths
         ]
         fig.legend(
             handles=legend_handles,
@@ -417,7 +430,7 @@ if uploaded_file is not None:
             ncol=3,
             fontsize=8,
             frameon=True,
-            bbox_to_anchor=(0.5, -0.02)
+            bbox_to_anchor=(0.5, -0.02),
         )
 
         st.pyplot(fig, use_container_width=True)
@@ -439,7 +452,7 @@ if uploaded_file is not None:
                 label="🖼️ Download Kolom Stratigrafi Resolusi Tinggi (PNG 300 DPI)",
                 data=img_buf.getvalue(),
                 file_name="kolom_stratigrafi_detail.png",
-                mime="image/png"
+                mime="image/png",
             )
 
             # 2. Export CSV
@@ -448,21 +461,45 @@ if uploaded_file is not None:
                 label="📄 Download Data Interval Stratigrafi (CSV)",
                 data=csv_bytes,
                 file_name="data_stratigrafi_detail.csv",
-                mime="text/csv"
+                mime="text/csv",
             )
 
             # 3. Export LAS 2.0 (Petrel Discrete Facies Log)
             step_m = 0.1
             depths_grid = np.arange(y_min_plot, y_max_plot + step_m, step_m)
-            las_buf = io.StringIO()
-            las_buf.write("~VERSION INFORMATION\n")
-            las_buf.write(" VERS.                  2.0 : CWLS LOG ASCII STANDARD - VERSION 2.0\n")
-            las_buf.write(" WRAP.                   NO : ONE LINE PER DEPTH STEP\n")
-            las_buf.write("~WELL INFORMATION\n")
-            las_buf.write(f" WELL.               {well_or_section_name} : WELL OR SECTION NAME\n")
-            las_buf.write(f" STRT.M              {y_min_plot:.4f} : START DEPTH\n")
-            las_buf.write(f" STOP.M              {y_max_plot:.4f} : STOP DEPTH\n")
-            las_buf.write(f" STEP.M              {step_m:.4f} : STEP\n")
-            las_buf.write(" NULL.            -999.2500 : NULL VALUE\n")
-            las_buf.write("~CURVE INFORMATION\n")
-            las_buf.write(" DEPT.M
+            las_lines = [
+                "~VERSION INFORMATION",
+                " VERS.                  2.0 : CWLS LOG ASCII STANDARD - VERSION 2.0",
+                " WRAP.                   NO : ONE LINE PER DEPTH STEP",
+                "~WELL INFORMATION",
+                f" WELL.               {well_or_section_name} : WELL OR SECTION NAME",
+                f" STRT.M              {y_min_plot:.4f} : START DEPTH",
+                f" STOP.M              {y_max_plot:.4f} : STOP DEPTH",
+                f" STEP.M              {step_m:.4f} : STEP",
+                " NULL.            -999.2500 : NULL VALUE",
+                "~CURVE INFORMATION",
+                " DEPT.M                     : 1  DEPTH",
+                " LITH_CODE.NONE             : 2  DISCRETE LITHOLOGY CODE",
+                "~ASCII LOG DATA",
+            ]
+
+            for d in depths_grid:
+                code_val = -999.25
+                for _, r in edited_df.iterrows():
+                    low = min(r["Top (m)"], r["Bottom (m)"])
+                    high = max(r["Top (m)"], r["Bottom (m)"])
+                    if low <= d <= high:
+                        code_val = r["Kode_Litologi"]
+                        break
+                las_lines.append(f" {d:10.4f} {code_val:12.4f}")
+
+            las_content = "\n".join(las_lines) + "\n"
+
+            st.download_button(
+                label="🛢️ Download Discrete Lithology Log (LAS 2.0 untuk Petrel)",
+                data=las_content.encode("utf-8"),
+                file_name="lithology_facies_detail.las",
+                mime="text/plain",
+            )
+else:
+    st.info("Unggah gambar log stratigrafi atau foto singkapan terukur di panel sebelah kiri untuk memulai.")
