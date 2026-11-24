@@ -100,4 +100,118 @@ if uploaded_file is not None:
 
                 # Pastikan koordinat berada dalam batas gambar
                 x0, x1 = max(0, min(x0, x1)), min(display_w, max(x0, x1))
-                y0, y1 = max(0, min(y0
+                y0, y1 = max(0, min(y0, y1)), min(display_h, max(y0, y1))
+
+                if (x1 - x0) > 10 and (y1 - y0) > 10:
+                    roi = img_np[y0:y1, x0:x1]
+                    
+                    # Konversi hex color picker ke RGB
+                    hex_c = target_color.lstrip('#')
+                    rgb_target = np.array([int(hex_c[i:i+2], 16) for i in (0, 2, 4)])
+
+                    # Hitung jarak warna Euclidean di dalam kotak ROI
+                    diff = np.linalg.norm(roi.astype(float) - rgb_target.astype(float), axis=2)
+                    mask = diff <= color_tol
+
+                    depths, values = [], []
+                    for row_idx in range(0, roi.shape[0], step_px):
+                        matched_x = np.where(mask[row_idx, :])[0]
+                        if len(matched_x) > 0:
+                            # Ambil median posisi piksel X jika garis kurva tebal
+                            px_x = np.median(matched_x)
+                            norm_x = px_x / (x1 - x0)
+                            norm_y = row_idx / (y1 - y0)
+
+                            depth = y_top_depth + norm_y * (y_bot_depth - y_top_depth)
+                            if is_log_scale and x_min_val > 0 and x_max_val > 0:
+                                log_min, log_max = np.log10(x_min_val), np.log10(x_max_val)
+                                val = 10 ** (log_min + norm_x * (log_max - log_min))
+                            else:
+                                val = x_min_val + norm_x * (x_max_val - x_min_val)
+
+                            depths.append(round(depth, 3))
+                            values.append(round(val, 4))
+
+                    if depths:
+                        df_result = pd.DataFrame({"DEPTH": depths, log_name: values})
+                    else:
+                        st.warning("Tidak ada piksel warna yang cocok di dalam kotak. Coba naikkan 'Toleransi Warna' atau periksa warna target.")
+
+            # --- LOGIKA MODE MANUAL ---
+            elif mode == "Manual (Klik Titik Kurva)" and len(objects) >= 3:
+                pts = [(obj["left"], obj["top"]) for obj in objects]
+                x0, y0 = pts[0]  # Pojok kiri atas kalibrasi
+                x1, y1 = pts[1]  # Pojok kanan bawah kalibrasi
+                curve_pts = pts[2:]
+
+                if abs(x1 - x0) > 5 and abs(y1 - y0) > 5:
+                    depths, values = [], []
+                    for px, py in curve_pts:
+                        norm_x = (px - x0) / (x1 - x0)
+                        norm_y = (py - y0) / (y1 - y0)
+
+                        depth = y_top_depth + norm_y * (y_bot_depth - y_top_depth)
+                        if is_log_scale and x_min_val > 0 and x_max_val > 0:
+                            log_min, log_max = np.log10(x_min_val), np.log10(x_max_val)
+                            val = 10 ** (log_min + norm_x * (log_max - log_min))
+                        else:
+                            val = x_min_val + norm_x * (x_max_val - x_min_val)
+
+                        depths.append(round(depth, 3))
+                        values.append(round(val, 4))
+
+                    df_result = pd.DataFrame({"DEPTH": depths, log_name: values}).sort_values("DEPTH")
+
+        # --- TAMPILKAN PLOT & TOMBOL DOWNLOAD ---
+        if df_result is not None and not df_result.empty:
+            st.success(f"Berhasil mengekstrak **{len(df_result)}** titik data!")
+            
+            # Preview grafik terbalik (kedalaman bertambah ke bawah)
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(4, 6))
+            ax.plot(df_result[log_name], df_result["DEPTH"], color="blue", linewidth=1.2)
+            ax.set_ylim(y_bot_depth, y_top_depth)
+            ax.set_xlim(x_min_val, x_max_val)
+            if is_log_scale:
+                ax.set_xscale("log")
+            ax.set_xlabel(f"{log_name} ({log_unit})")
+            ax.set_ylabel(f"Depth ({depth_unit})")
+            ax.grid(True, which="both", linestyle="--", alpha=0.5)
+            st.pyplot(fig)
+
+            st.dataframe(df_result.head(10), use_container_width=True)
+
+            # Export CSV
+            csv_data = df_result.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Download CSV",
+                data=csv_data,
+                file_name=f"digitized_{log_name}.csv",
+                mime="text/csv"
+            )
+
+            # Export LAS 2.0
+            las_buffer = io.StringIO()
+            las_buffer.write("~VERSION INFORMATION\n")
+            las_buffer.write(" VERS.                  2.0 : CWLS LOG ASCII STANDARD - VERSION 2.0\n")
+            las_buffer.write(" WRAP.                   NO : ONE LINE PER DEPTH STEP\n")
+            las_buffer.write("~WELL INFORMATION\n")
+            las_buffer.write(f" STRT.{depth_unit}         {df_result['DEPTH'].min():.4f} : START DEPTH\n")
+            las_buffer.write(f" STOP.{depth_unit}         {df_result['DEPTH'].max():.4f} : STOP DEPTH\n")
+            las_buffer.write(f" STEP.{depth_unit}         {df_result['DEPTH'].diff().median():.4f} : STEP\n")
+            las_buffer.write(" NULL.            -999.2500 : NULL VALUE\n")
+            las_buffer.write("~CURVE INFORMATION\n")
+            las_buffer.write(f" DEPT.{depth_unit}                  : 1  DEPTH\n")
+            las_buffer.write(f" {log_name}.{log_unit}                  : 2  {log_name} CURVE\n")
+            las_buffer.write("~ASCII LOG DATA\n")
+            for _, row in df_result.iterrows():
+                las_buffer.write(f" {row['DEPTH']:10.4f} {row[log_name]:12.4f}\n")
+
+            st.download_button(
+                label="⬇️ Download LAS 2.0 (Siap Import ke Petrel)",
+                data=las_buffer.getvalue().encode("utf-8"),
+                file_name=f"digitized_{log_name}.las",
+                mime="text/plain"
+            )
+else:
+    st.info("Silakan unggah gambar *well log* melalui panel di sebelah kiri untuk memulai.")
